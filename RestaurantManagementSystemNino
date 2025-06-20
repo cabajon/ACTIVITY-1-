@@ -1,0 +1,180 @@
+/*
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Main.java to edit this template
+ */
+package restaurantmanagementsystem;
+
+/**
+ *
+ * @author FRITZ
+ */
+import java.sql.*;
+import java.util.*;
+
+class MenuItem {
+    int id;
+    String name;
+    double price;
+
+    public MenuItem(int id, String name, double price) {
+        this.id = id;
+        this.name = name;
+        this.price = price;
+    }
+}
+
+class Order {
+    List<MenuItem> items = new ArrayList<>();
+    double total;
+
+    public void addItem(MenuItem item) {
+        items.add(item);
+        total += item.price;
+    }
+
+    public void printBill() {
+        System.out.println("\n--- Bill ---");
+        for (MenuItem item : items) {
+            System.out.println(item.name + " - PHP " + item.price);
+        }
+        System.out.println("Total: PHP " + total);
+    }
+
+    public void processPayment(Connection conn) {
+        Scanner scanner = new Scanner(System.in);
+        double payment;
+        do {
+            System.out.print("Enter payment amount: PHP ");
+            payment = scanner.nextDouble();
+            if (payment < total) {
+                System.out.println("Insufficient payment. Please enter at least PHP " + total);
+            }
+        } while (payment < total);
+        double change = payment - total;
+        saveOrderToDatabase(conn, payment, change);
+        printReceipt(payment, change);
+    }
+
+    public void saveOrderToDatabase(Connection conn, double payment, double change) {
+        try {
+            String orderSQL = "INSERT INTO orders (total, payment, change_amount) VALUES (?, ?, ?)";
+            PreparedStatement pstmt = conn.prepareStatement(orderSQL, Statement.RETURN_GENERATED_KEYS);
+            pstmt.setDouble(1, total);
+            pstmt.setDouble(2, payment);
+            pstmt.setDouble(3, change);
+            pstmt.executeUpdate();
+
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                int orderId = rs.getInt(1);
+                for (MenuItem item : items) {
+                    String itemSQL = "INSERT INTO order_items (order_id, menu_id) VALUES (?, ?)";
+                    PreparedStatement itemStmt = conn.prepareStatement(itemSQL);
+                    itemStmt.setInt(1, orderId);
+                    itemStmt.setInt(2, item.id);
+                    itemStmt.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void printReceipt(double payment, double change) {
+        System.out.println("\n--- Receipt ---");
+        for (MenuItem item : items) {
+            System.out.println(item.name + " - PHP " + item.price);
+        }
+        System.out.println("Total: PHP " + total);
+        System.out.println("Payment: PHP " + payment);
+        System.out.println("Change: PHP " + change);
+        System.out.println("Thank you for dining with us!");
+    }
+}
+
+public class RestaurantManagementSystem {
+    static List<MenuItem> menu = new ArrayList<>();
+    static Scanner scanner = new Scanner(System.in);
+    static Connection conn;
+
+    public static void main(String[] args) {
+        connectDatabase();
+        loadMenu();
+        runSystem();
+    }
+
+    public static void connectDatabase() {
+        try {
+            conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/restaurant_db", "root", "chunchun");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void loadMenu() {
+        menu.clear();
+        try {
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery("SELECT * FROM menu");
+            while (rs.next()) {
+                menu.add(new MenuItem(rs.getInt("id"), rs.getString("name"), rs.getDouble("price")));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void runSystem() {
+        while (true) {
+            System.out.println("\nNegros Dining Restaurant Management System");
+            System.out.println("1. View Menu");
+            System.out.println("2. Take Order");
+            System.out.println("3. Exit");
+            System.out.print("Choose an option: ");
+            
+            int choice = scanner.nextInt();
+            scanner.nextLine(); // Consume newline
+
+            switch (choice) {
+                case 1:
+                    displayMenu();
+                    break;
+                case 2:
+                    takeOrder();
+                    break;
+                case 3:
+                    System.out.println("Exiting system...");
+                    return;
+                default:
+                    System.out.println("Invalid choice. Try again.");
+            }
+        }
+    }
+
+    public static void displayMenu() {
+        System.out.println("\n--- Menu ---");
+        for (int i = 0; i < menu.size(); i++) {
+            System.out.println((i + 1) + ". " + menu.get(i).name + " - PHP " + menu.get(i).price);
+        }
+    }
+
+    public static void takeOrder() {
+        Order order = new Order();
+        while (true) {
+            displayMenu();
+            System.out.print("Enter item number to order (0 to finish): ");
+            int itemNumber = scanner.nextInt();
+
+            if (itemNumber == 0) break;
+            if (itemNumber < 1 || itemNumber > menu.size()) {
+                System.out.println("Invalid choice. Try again.");
+                continue;
+            }
+            
+            order.addItem(menu.get(itemNumber - 1));
+            System.out.println("Item added to order.");
+        }
+        order.printBill();
+        order.processPayment(conn);
+    }
+}
